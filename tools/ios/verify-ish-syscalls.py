@@ -148,7 +148,7 @@ def fork_timer():
                 checked(SYS_TIMER_DELETE, child_timer)
                 child_timer = None
                 payload = {"child_first_timer": created_timer_id}
-            except BaseException as error:
+            except Exception as error:
                 payload = {"error": str(error)}
             finally:
                 try:

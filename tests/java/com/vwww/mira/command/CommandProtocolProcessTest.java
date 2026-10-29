@@ -1,6 +1,7 @@
 package com.vwww.mira.command;
 
 import org.json.JSONObject;
+import org.json.JSONException;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -12,10 +13,20 @@ import java.util.Arrays;
 public final class CommandProtocolProcessTest {
     public static void main(String[] args) throws Exception {
         testLengthPrefixedUtf8Json();
+        testOutOfRangeJsonNumber();
         testTextBase64AndResultFields();
         testResultNormalization();
         testProcessOutputAndExitCode();
         System.out.println("PASS: command framing, text encoding, result schema, and process output");
+    }
+
+    private static void testOutOfRangeJsonNumber() {
+        try {
+            new JSONObject("{\"value\":999999999999999999999}");
+            throw new AssertionError("out-of-range JSON integer is rejected");
+        } catch (JSONException expected) {
+            // Expected.
+        }
     }
 
     private static void testLengthPrefixedUtf8Json() throws Exception {

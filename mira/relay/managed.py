@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
 import json
 import os
@@ -99,29 +100,21 @@ class Manager:
         if self.child is None:
             return
         # The shell and its relay/tunnel share a private process group.
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(self.child.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
+        with contextlib.suppress(subprocess.TimeoutExpired):
             self.child.wait(timeout=8)
-        except subprocess.TimeoutExpired:
-            pass
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(self.child.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         self.child.wait()
         self.child = None
 
     def watch_stop_request(self):
         # Bind stop to a particular daemon generation, never to a reusable PID.
         while not self.stop_event.wait(0.2):
-            try:
+            with contextlib.suppress(OSError):
                 if self.stop_path.read_text().strip() == self.run_id:
                     self.stop_event.set()
-            except OSError:
-                pass
 
     def supervise(self):
         lock = self.locked()

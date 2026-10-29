@@ -679,16 +679,19 @@ def validate_layout(data_root: Path) -> None:
         if not path.exists():
             raise FileNotFoundError(f"构建结果缺少必需文件: {path}")
     # Ignore host site-packages and PYTHONPATH so they cannot fill target omissions.
+    validation_script = "\n".join([
+        "import importlib, sys",
+        "from pathlib import Path",
+        "target = Path(sys.argv[1]).resolve()",
+        "sys.path.insert(0, str(target))",
+        "for name in sys.argv[2:]:",
+        "    module = importlib.import_module(name)",
+        "    if target not in Path(module.__file__).resolve().parents:",
+        "        raise ImportError(f'{name} was imported outside the target: {module.__file__}')",
+    ]) + "\n"
     run([
         sys.executable, "-I", "-S", "-B", "-c",
-        "import importlib, sys\n"
-        "from pathlib import Path\n"
-        "target = Path(sys.argv[1]).resolve()\n"
-        "sys.path.insert(0, str(target))\n"
-        "for name in sys.argv[2:]:\n"
-        "    module = importlib.import_module(name)\n"
-        "    if target not in Path(module.__file__).resolve().parents:\n"
-        "        raise ImportError(f'{name} was imported outside the target: {module.__file__}')\n",
+        validation_script,
         str(site_packages_dir(data_root)), *PURE_PYTHON_MODULES,
     ])
 

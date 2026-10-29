@@ -75,7 +75,7 @@ public final class VerifiedExtractionTest {
         byte[] damaged = DATA.clone(); damaged[0] ^= 1;
         Files.write(target.toPath(), damaged);
         fails(() -> VerifiedExtraction.verifyFile(target, DATA.length, expectedHash));
-        File blocked = new File(root, "blocked"); blocked.mkdir();
+        File blocked = new File(root, "blocked"); check(blocked.mkdir());
         Files.write(new File(blocked, "user-file").toPath(), DATA);
         fails(() -> VerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
             blocked, DATA.length, crc(DATA), false));

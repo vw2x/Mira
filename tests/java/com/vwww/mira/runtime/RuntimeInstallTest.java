@@ -67,10 +67,15 @@ public final class RuntimeInstallTest {
         File state = new File(files, ".mira-bootstrap-state");
         Files.write(state.toPath(), "# Managed by MiraBootstrap\nversion=8\n".getBytes());
         Context context = new Context() {
+            @Override
             public Context getApplicationContext() { return this; }
+            @Override
             public AssetManager getAssets() { return new AssetManager(); }
+            @Override
             public File getFilesDir() { return files; }
+            @Override
             public File getCacheDir() { return new File(root, "cache"); }
+            @Override
             public String getPackageCodePath() { return apk.getAbsolutePath(); }
         };
         RuntimeInstaller installer = new RuntimeInstaller(context);
