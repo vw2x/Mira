@@ -18,7 +18,7 @@ Mira 当前 v1.0.0 是研究原型和参考实现, 重点不是做完整企业�
 - [x] 修复发版复验发现的 Python wheel 缓存漏包和宿主平台 wheel 混入, 补齐 Android Frida 16.7.19 的 CLI 模块路径兼容; Pixel 4 XL / Android 13 覆盖安装后自动补包, CLI、MCP 及 256 KiB RPC 通过, 用户测试文件保留.
 - [x] 增加指定提交的发布预检入口, 预检不会创建 Release; 正式发布前核对五份下载文件. 见 [发布流程](../RELEASING.md).
 
-其他候选方向保留待后续逐项评估: Termux 上游可用修复、Relay/会话稳定性、系统兼容性矩阵、构建自动化、iOS 并发检查与 iSH 汇编对齐警告. Android SDK 基线和 Frida 17 暂不推进; APK 虚拟环境 trace 探索暂缓.
+其他候选方向保留待后续逐项评估: Termux 上游可用修复、Relay/会话稳定性、系统兼容性矩阵、构建自动化、Frida 构建的其余嵌套依赖及 npm 锁定、iOS 并发检查与 iSH 汇编对齐警告. Android SDK 基线和 Frida 17 暂不推进; APK 虚拟环境 trace 探索暂缓.
 
 ### 原有阶段目标
 

@@ -286,6 +286,19 @@ if not agent_no_jni.exists():
 PY
 }
 
+sync_glib_gvdb_revision() {
+  local glib_dir="$SOURCE_DIR/deps/glib" expected actual
+  expected="$(git -C "$glib_dir" rev-parse HEAD:subprojects/gvdb)"
+  # Frida clones recursively before checking out GLib's pin, leaving gvdb at a newer revision.
+  git -C "$glib_dir" submodule update --init --checkout --recursive -- subprojects/gvdb
+  actual="$(git -C "$glib_dir/subprojects/gvdb" rev-parse HEAD)"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "GLib gvdb revision mismatch: expected=$expected actual=$actual" >&2
+    return 1
+  fi
+  log "GLib gvdb revision: $actual"
+}
+
 prepare_source_tree() {
   mkdir -p "$BUILD_ROOT" "$(dirname "$OUTPUT_DIR")"
 
@@ -310,6 +323,7 @@ prepare_source_tree() {
     make -f Makefile.sdk.mk deps/.zlib-stamp deps/.libffi-stamp deps/.glib-stamp
   )
 
+  sync_glib_gvdb_revision
   apply_source_patches
 }
 
