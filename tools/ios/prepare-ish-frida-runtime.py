@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from email.parser import Parser
 import os
 import re
 import shutil
@@ -10,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -36,6 +38,7 @@ PURE_PYTHON_SPECS = (
     "pygments<3.0.0,>=2.0.2",
     "wcwidth",
 )
+PURE_PYTHON_MODULES = ("colorama", "prompt_toolkit", "pygments", "wcwidth")
 
 SCRIPT_PATH = Path(__file__).resolve()
 ROOT_DIR = SCRIPT_PATH.parents[2]
@@ -280,7 +283,6 @@ def site_packages_dir(data_root: Path) -> Path:
 
 def download_wheels(destination: Path, specs: tuple[str, ...], extra_args: list[str] | None = None) -> list[Path]:
     destination.mkdir(parents=True, exist_ok=True)
-    before = {path.resolve() for path in destination.glob("*")}
     cmd = [
         sys.executable,
         "-m",
@@ -289,22 +291,53 @@ def download_wheels(destination: Path, specs: tuple[str, ...], extra_args: list[
         "--disable-pip-version-check",
         "--only-binary=:all:",
         "--no-deps",
-        "--dest",
-        str(destination),
+        "--platform", "any",
+        "--abi", "none",
     ]
     if extra_args:
         cmd.extend(extra_args)
     cmd.extend(specs)
-    run(cmd)
-    after = sorted({path.resolve() for path in destination.glob("*")} - before)
-    if not after:
-        after = sorted(path.resolve() for path in destination.glob("*"))
-    return list(after)
+    # An empty destination contains exactly this resolution, including pip cache hits.
+    with tempfile.TemporaryDirectory(prefix="wheel-download-", dir=destination) as staging:
+        run([*cmd, "--dest", staging])
+        wheels = sorted(Path(staging).glob("*.whl"))
+        if not wheels:
+            raise FileNotFoundError(f"未下载到纯 Python wheel: {destination}")
+        for wheel in wheels:
+            validate_pure_python_wheel(wheel)
+        selected = []
+        for wheel in wheels:
+            target = destination / wheel.name
+            shutil.copy2(wheel, target)
+            selected.append(target.resolve())
+        return selected
+
+
+def checked_wheel_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    entries = archive.infolist()
+    for entry in entries:
+        for part in entry.filename.replace("\\", "/").split("/"):
+            if part != ".env.example" and (part == ".env" or part.startswith(".env.")):
+                raise ValueError(f"wheel 包含受保护的环境文件路径: {entry.filename}")
+    return entries
+
+
+def validate_pure_python_wheel(wheel_path: Path) -> None:
+    with zipfile.ZipFile(wheel_path) as archive:
+        metadata_paths = [entry.filename for entry in checked_wheel_entries(archive) if entry.filename.endswith(".dist-info/WHEEL")]
+        if len(metadata_paths) != 1:
+            raise ValueError(f"wheel 元数据不完整: {wheel_path.name}")
+        metadata = Parser().parsestr(archive.read(metadata_paths[0]).decode("utf-8"))
+    tags = metadata.get_all("Tag", [])
+    if metadata.get("Root-Is-Purelib", "").lower() != "true" or not tags or any(
+        len(tag.split("-")) != 3 or tag.split("-")[-2:] != ["none", "any"] for tag in tags
+    ):
+        raise ValueError(f"仅允许纯 Python any wheel: {wheel_path.name}")
 
 
 def install_wheel(wheel_path: Path, site_packages: Path) -> None:
     with zipfile.ZipFile(wheel_path) as archive:
-        for entry in archive.infolist():
+        for entry in checked_wheel_entries(archive):
             if entry.filename.endswith("/"):
                 continue
             parts = Path(entry.filename).parts
@@ -645,6 +678,19 @@ def validate_layout(data_root: Path) -> None:
     for path in required_paths:
         if not path.exists():
             raise FileNotFoundError(f"构建结果缺少必需文件: {path}")
+    # Ignore host site-packages and PYTHONPATH so they cannot fill target omissions.
+    run([
+        sys.executable, "-I", "-S", "-B", "-c",
+        "import importlib, sys\n"
+        "from pathlib import Path\n"
+        "target = Path(sys.argv[1]).resolve()\n"
+        "sys.path.insert(0, str(target))\n"
+        "for name in sys.argv[2:]:\n"
+        "    module = importlib.import_module(name)\n"
+        "    if target not in Path(module.__file__).resolve().parents:\n"
+        "        raise ImportError(f'{name} was imported outside the target: {module.__file__}')\n",
+        str(site_packages_dir(data_root)), *PURE_PYTHON_MODULES,
+    ])
 
 
 def main() -> int:

@@ -413,25 +413,67 @@ path.write_text(pattern.sub(replacement, text, count=1))
 PY
 }
 
+resolve_macos_tool() {
+  local name="$1" formula="$2" configured="${3:-}"
+  local candidate="" prefix=""
+  if [[ -n "$configured" ]]; then
+    candidate="$(command -v -- "$configured" 2>/dev/null || true)"
+    if [[ ! -f "$candidate" || ! -x "$candidate" ]]; then
+      echo "Configured tool for $name is not executable." >&2
+      return 1
+    fi
+  else
+    if command -v brew >/dev/null 2>&1; then
+      prefix="$(brew --prefix "$formula" 2>/dev/null || true)"
+      if [[ -n "$prefix" && -f "$prefix/bin/$name" && -x "$prefix/bin/$name" ]]; then
+        candidate="$prefix/bin/$name"
+      fi
+    fi
+    if [[ -z "$candidate" ]]; then
+      candidate="$(command -v -- "$name" 2>/dev/null || true)"
+    fi
+    if [[ ! -f "$candidate" || ! -x "$candidate" ]]; then
+      if [[ "$formula" == llvm || "$formula" == lld ]] && command -v brew >/dev/null 2>&1; then
+        prefix="$(brew --prefix "$formula@21" 2>/dev/null || true)"
+        if [[ -n "$prefix" && -f "$prefix/bin/$name" && -x "$prefix/bin/$name" ]]; then
+          candidate="$prefix/bin/$name"
+        fi
+      fi
+    fi
+    if [[ ! -f "$candidate" || ! -x "$candidate" ]]; then
+      echo "Unable to find executable $name. Install Homebrew $formula or configure the tool explicitly." >&2
+      return 1
+    fi
+  fi
+  printf '%s/%s\n' "$(cd "$(dirname "$candidate")" && pwd)" "$(basename "$candidate")"
+}
+
 prepare_macos_musl_wrapper() {
-  require_tool zig
   require_tool python3
 
-  local llvm_prefix lld_prefix wrapdir
-  llvm_prefix="$(brew --prefix llvm@21)"
-  lld_prefix="$(brew --prefix lld@21)"
+  local zig_bin lld_bin wrapdir name wrapper_name
+  zig_bin="$(resolve_macos_tool zig zig)"
+  lld_bin="$(resolve_macos_tool ld.lld lld "${LD:-}")"
+  AR="$(resolve_macos_tool llvm-ar llvm "${AR:-}")"
+  NM="$(resolve_macos_tool llvm-nm llvm "${NM:-}")"
+  RANLIB="$(resolve_macos_tool llvm-ranlib llvm "${RANLIB:-}")"
+  STRIP="$(resolve_macos_tool llvm-strip llvm "${STRIP:-}")"
+  READELF="$(resolve_macos_tool llvm-readelf llvm "${READELF:-}")"
+  OBJCOPY="$(resolve_macos_tool llvm-objcopy llvm "${OBJCOPY:-}")"
+  OBJDUMP="$(resolve_macos_tool llvm-objdump llvm "${OBJDUMP:-}")"
   wrapdir="$SOURCE_DIR/build/musl-wrap"
   mkdir -p "$wrapdir"
 
-  cat > "$wrapdir/i686-linux-musl-gcc" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+    printf 'zig_bin=%q\nlld_bin=%q\n' "$zig_bin" "$lld_bin"
+    cat <<'EOF'
 for arg in "$@"; do
   if [[ "$arg" == "--version" ]]; then
-    exec /opt/homebrew/bin/zig cc -target x86-linux-musl --version
+    exec "$zig_bin" cc -target x86-linux-musl --version
   fi
   if [[ "$arg" == "-Wl,--version" ]]; then
-    exec /opt/homebrew/opt/lld@21/bin/ld.lld --version
+    exec "$lld_bin" --version
   fi
 done
 use_target="x86-linux-musl"
@@ -455,18 +497,20 @@ for arg in "$@"; do
   esac
 done
 args+=("-Wno-error=incompatible-function-pointer-types" "-Wno-int-conversion")
-exec /opt/homebrew/bin/zig cc -target "$use_target" "${args[@]}"
+exec "$zig_bin" cc -target "$use_target" "${args[@]}"
 EOF
+  } > "$wrapdir/i686-linux-musl-gcc"
 
-  cat > "$wrapdir/i686-linux-musl-g++" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+    printf 'zig_bin=%q\nlld_bin=%q\n' "$zig_bin" "$lld_bin"
+    cat <<'EOF'
 for arg in "$@"; do
   if [[ "$arg" == "--version" ]]; then
-    exec /opt/homebrew/bin/zig c++ -target x86-linux-musl --version
+    exec "$zig_bin" c++ -target x86-linux-musl --version
   fi
   if [[ "$arg" == "-Wl,--version" ]]; then
-    exec /opt/homebrew/opt/lld@21/bin/ld.lld --version
+    exec "$lld_bin" --version
   fi
 done
 use_target="x86-linux-musl"
@@ -490,23 +534,30 @@ for arg in "$@"; do
   esac
 done
 args+=("-Wno-error=incompatible-function-pointer-types" "-Wno-int-conversion")
-exec /opt/homebrew/bin/zig c++ -target "$use_target" "${args[@]}"
+exec "$zig_bin" c++ -target "$use_target" "${args[@]}"
 EOF
+  } > "$wrapdir/i686-linux-musl-g++"
 
   chmod +x "$wrapdir/i686-linux-musl-gcc" "$wrapdir/i686-linux-musl-g++"
 
+  # Frida 16.0.7's setup-env.sh evals these variables as shell command arrays.
+  # Pass fixed command names; consume selected paths only in quoted wrappers.
+  LD="$lld_bin"
+  for name in AR LD NM RANLIB STRIP READELF OBJCOPY OBJDUMP; do
+    wrapper_name="mira-musl-$name"
+    {
+      printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+      printf 'exec %q "$@"\n' "${!name}"
+    } > "$wrapdir/$wrapper_name"
+    chmod +x "$wrapdir/$wrapper_name"
+    printf -v "$name" '%s' "$wrapper_name"
+  done
+
   export PATH="$wrapdir:$PATH"
   export FRIDA_LIBC=musl
-  export CC="$wrapdir/i686-linux-musl-gcc"
-  export CXX="$wrapdir/i686-linux-musl-g++"
-  export AR="$llvm_prefix/bin/llvm-ar"
-  export LD="$lld_prefix/bin/ld.lld"
-  export NM="$llvm_prefix/bin/llvm-nm"
-  export RANLIB="$llvm_prefix/bin/llvm-ranlib"
-  export STRIP="$llvm_prefix/bin/llvm-strip"
-  export READELF="$llvm_prefix/bin/llvm-readelf"
-  export OBJCOPY="$llvm_prefix/bin/llvm-objcopy"
-  export OBJDUMP="$llvm_prefix/bin/llvm-objdump"
+  export CC=i686-linux-musl-gcc
+  export CXX=i686-linux-musl-g++
+  export AR LD NM RANLIB STRIP READELF OBJCOPY OBJDUMP
 }
 
 prepare_linux_cross_env() {
@@ -635,7 +686,6 @@ main() {
   require_tool git
   require_tool make
   require_tool python3
-  require_tool brew
 
   prepare_source_tree
   prepare_native_env
@@ -651,4 +701,6 @@ main() {
   log "generated musl-native Frida devkit at: $OUTPUT_DIR"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
