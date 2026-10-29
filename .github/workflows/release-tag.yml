@@ -10,6 +10,14 @@ on:
         description: 'Release tag to build and publish, for example v1.1.2'
         required: true
         type: string
+      source_ref:
+        description: 'Optional commit or branch to verify before creating the release tag'
+        required: false
+        type: string
+      publish_release:
+        description: 'Create or update the release draft (disable for preflight builds)'
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -25,7 +33,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          ref: ${{ env.MIRA_RELEASE_TAG }}
+          ref: ${{ inputs.source_ref || env.MIRA_RELEASE_TAG }}
           submodules: recursive
           lfs: true
 
@@ -103,7 +111,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          ref: ${{ env.MIRA_RELEASE_TAG }}
+          ref: ${{ inputs.source_ref || env.MIRA_RELEASE_TAG }}
           submodules: recursive
           lfs: true
 
@@ -149,6 +157,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub release assets
+    if: github.event_name == 'push' || (inputs.publish_release && !inputs.source_ref)
     runs-on: ubuntu-latest
     needs:
       - build-python-android

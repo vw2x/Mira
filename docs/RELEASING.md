@@ -2,6 +2,8 @@
 
 The `release-tag-build` workflow creates a draft GitHub Release. It publishes the Python and unsigned iOS artifacts to that draft. Its Android APK uses an ephemeral CI debug key and remains an Actions artifact for package verification only.
 
+Before creating a tag, run a preflight build with `workflow_dispatch`: set `release_tag` to the intended version, `source_ref` to its full commit SHA, and `publish_release` to `false`. A nonempty `source_ref` always suppresses release publication. Once that commit passes, tag the same commit; the tag build creates the draft. Keep failed tags unchanged.
+
 Build the public Android APK with the maintainer's existing local debug key:
 
 ```bash
