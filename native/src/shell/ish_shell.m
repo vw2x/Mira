@@ -2,6 +2,7 @@
 
 #include "shell/ish_shell.h"
 #include "shell/ish_hostfs.h"
+#include "shell/ish_rootfs.h"
 #include "mira_pty_ios_shim.h"
 
 #include <TargetConditionals.h>
@@ -202,39 +203,16 @@ static void mira_ish_die_handler(const char *message) {
 }
 
 static int mira_ish_copy_bundle_root_if_needed(NSString *rootPath) {
-    NSFileManager *manager = NSFileManager.defaultManager;
-    NSString *dataPath = [rootPath stringByAppendingPathComponent:@"data"];
-    NSString *metaPath = [rootPath stringByAppendingPathComponent:@"meta.db"];
-    NSString *installedStampPath = [rootPath stringByAppendingPathComponent:@".mira-ish-rootfs.stamp"];
-
     NSURL *bundleRoot = [NSBundle.mainBundle URLForResource:@"MiraISHRoot" withExtension:@"fakefs"];
-    if (bundleRoot == nil) {
-        mira_ish_set_error("iSH rootfs missing: bundle resource MiraISHRoot.fakefs not found. Run tools/ios/prepare-ish-rootfs.sh during the iOS build");
-        errno = ENOENT;
-        return -1;
-    }
-    NSString *bundleStampPath = [bundleRoot.path stringByAppendingPathComponent:@".mira-ish-rootfs.stamp"];
-
-    if ([manager fileExistsAtPath:dataPath] && [manager fileExistsAtPath:metaPath]) {
-        NSString *bundleStamp = [NSString stringWithContentsOfFile:bundleStampPath encoding:NSUTF8StringEncoding error:nil];
-        NSString *installedStamp = [NSString stringWithContentsOfFile:installedStampPath encoding:NSUTF8StringEncoding error:nil];
-        if (bundleStamp != nil && installedStamp != nil && [bundleStamp isEqualToString:installedStamp]) {
-            return 0;
-        }
-    }
-
     NSError *error = nil;
-    [manager removeItemAtPath:rootPath error:nil];
-    NSString *parent = [rootPath stringByDeletingLastPathComponent];
-    if (![manager createDirectoryAtPath:parent withIntermediateDirectories:YES attributes:nil error:&error]) {
-        mira_ish_set_error("iSH rootfs directory create failed: %s", error.localizedDescription.UTF8String ?: "unknown");
+    MiraISHRootfsResult result = mira_ish_rootfs_prepare(rootPath, bundleRoot, NSFileManager.defaultManager, &error);
+    if (result == MiraISHRootfsFailed) {
+        mira_ish_set_error("iSH rootfs preparation failed; existing files preserved: %s", error.localizedDescription.UTF8String ?: "unknown");
         errno = EIO;
         return -1;
     }
-    if (![manager copyItemAtURL:bundleRoot toURL:[NSURL fileURLWithPath:rootPath isDirectory:YES] error:&error]) {
-        mira_ish_set_error("iSH rootfs install failed: %s", error.localizedDescription.UTF8String ?: "unknown");
-        errno = EIO;
-        return -1;
+    if (result == MiraISHRootfsUpdatePending) {
+        fprintf(stderr, "Mira iSH: installed rootfs preserved; bundled runtime update pending explicit migration (stamp changed or unavailable).\n");
     }
     return 0;
 }

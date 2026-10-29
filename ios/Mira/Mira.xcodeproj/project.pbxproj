@@ -25,6 +25,7 @@
 		A20000000000000000000007 /* pty_pair_darwin.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* pty_pair_darwin.c */; };
 		A20000000000000000000008 /* ish_shell.m in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* ish_shell.m */; };
 		A20000000000000000000009 /* ish_hostfs.m in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* ish_hostfs.m */; };
+		A2000000000000000000000A /* ish_rootfs.m in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* ish_rootfs.m */; };
 		A40000000000000000000001 /* mira_ios_frida_loader.m in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* mira_ios_frida_loader.m */; };
 		A40000000000000000000002 /* fishhook.c in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* fishhook.c */; };
 		A40000000000000000000003 /* mira_ios_log_hook.c in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* mira_ios_log_hook.c */; };
@@ -53,6 +54,8 @@
 		A20000000000000000000019 /* ish_shell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "../../native/src/shell/ish_shell.h"; sourceTree = SOURCE_ROOT; };
 		A2000000000000000000001A /* ish_hostfs.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "../../native/src/shell/ish_hostfs.m"; sourceTree = SOURCE_ROOT; };
 		A2000000000000000000001B /* ish_hostfs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "../../native/src/shell/ish_hostfs.h"; sourceTree = SOURCE_ROOT; };
+		A2000000000000000000001C /* ish_rootfs.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "../../native/src/shell/ish_rootfs.m"; sourceTree = SOURCE_ROOT; };
+		A2000000000000000000001D /* ish_rootfs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "../../native/src/shell/ish_rootfs.h"; sourceTree = SOURCE_ROOT; };
 		A40000000000000000000011 /* mira_ios_frida_loader.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "../../native/bridge/ios/mira_ios_frida_loader.m"; sourceTree = SOURCE_ROOT; };
 		A40000000000000000000012 /* fishhook.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "../../native/bridge/ios/fishhook.c"; sourceTree = SOURCE_ROOT; };
 		A40000000000000000000013 /* fishhook.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "../../native/bridge/ios/fishhook.h"; sourceTree = SOURCE_ROOT; };
@@ -138,6 +141,8 @@
 				A20000000000000000000019 /* ish_shell.h */,
 				A2000000000000000000001A /* ish_hostfs.m */,
 				A2000000000000000000001B /* ish_hostfs.h */,
+				A2000000000000000000001C /* ish_rootfs.m */,
+				A2000000000000000000001D /* ish_rootfs.h */,
 			);
 			name = NativeCore;
 			sourceTree = "<group>";
@@ -218,6 +223,8 @@
 			);
 			inputPaths = (
 				"$(PROJECT_DIR)/../../tools/ios/prepare-ish-rootfs.sh",
+				"$(PROJECT_DIR)/../../tools/ios/ish-build-state.py",
+				"$(PROJECT_DIR)/../../tools/ios/prepare-ish-frida-runtime.py",
 				"$(PROJECT_DIR)/../../third_party/ish/app/iSH.xcconfig",
 				"$(PROJECT_DIR)/../../third_party/ish/LICENSE.md",
 				"$(PROJECT_DIR)/../../third_party/ish/LICENSE.IOS",
@@ -273,6 +280,7 @@
 				A20000000000000000000007 /* pty_pair_darwin.c in Sources */,
 				A20000000000000000000008 /* ish_shell.m in Sources */,
 				A20000000000000000000009 /* ish_hostfs.m in Sources */,
+				A2000000000000000000000A /* ish_rootfs.m in Sources */,
 				A10000000000000000000001 /* MiraApp.swift in Sources */,
 				A10000000000000000000002 /* ContentView.swift in Sources */,
 				A10000000000000000000003 /* MiraControlViewModel.swift in Sources */,

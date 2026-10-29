@@ -1,0 +1,53 @@
+--- a/kernel/mmap.c
++++ b/kernel/mmap.c
+@@ -51,7 +51,7 @@
+     int err;
+     pages_t pages = PAGE_ROUND_UP(len);
+     if (!pages) return _EINVAL;
+-    page_t page;
++    page_t page = 0;
+     if (addr != 0) {
+         if (PGOFFSET(addr) != 0)
+             return _EINVAL;
+@@ -59,7 +59,8 @@
+         if (!(flags & MMAP_FIXED) && !pt_is_hole(current->mem, page, pages)) {
+             addr = 0;
+         }
+-    } else {
++    }
++    if (addr == 0) {
+         page = pt_find_hole(current->mem, pages);
+         if (page == BAD_PAGE)
+             return _ENOMEM;
+--- a/app/xcode-meson.sh
++++ b/app/xcode-meson.sh
+@@ -1,7 +1,6 @@
+ #!/bin/bash
+ 
+-# Try to figure out the user's PATH to pick up their installed utilities.
+-export PATH="$PATH:$(sudo -u "$USER" -i printenv PATH)"
++# The Mira build entrypoint supplies PATH without starting a login shell.
+ 
+ mkdir -p "$MESON_BUILD_DIR"
+ cd "$MESON_BUILD_DIR"
+--- a/app/xcode-ninja.sh
++++ b/app/xcode-ninja.sh
+@@ -1,6 +1,5 @@
+ #!/bin/sh
+ 
+-# Try to figure out the user's PATH to pick up their installed utilities.
+-export PATH="$PATH:$(sudo -u "$USER" -i printenv PATH)"
++# The Mira build entrypoint supplies PATH without starting a login shell.
+ 
+ ninja "$@"
+--- a/fs/tty.c
++++ b/fs/tty.c
+@@ -353,6 +353,8 @@
+                 err = _EAGAIN;
+                 if (!blocking)
+                     break;
++                // Let a waiting reader drain input before waiting for space.
++                tty_input_wakeup(tty);
+                 err = wait_for(&tty->consumed, &tty->lock, NULL);
+                 if (err < 0)
+                     break;

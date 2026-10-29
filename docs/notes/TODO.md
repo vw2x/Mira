@@ -6,6 +6,20 @@ Mira 当前 v1.0.0 是研究原型和参考实现, 重点不是做完整企业�
 
 ## 接下来一周目标
 
+### 当前推进: iOS iSH 升级
+
+- [x] 固定升级 iSH commit, 保留 Android 配置、Termux、Frida 16.0.7 和现有 Python/rootfs.
+- [x] 修复新上游 mmap 地址提示回归, 补充修补前失败、修补后通过的行为测试.
+- [x] 修复真机验收暴露的既有 TTY 长输入阻塞, 宿主线程回归及真机 8,433 字节脚本投递通过.
+- [x] 以源码/工具链/参数/产物指纹判断 iSH 库缓存, 失败构建不复用旧标记.
+- [x] rootfs 来源独立固定; App stamp 变化时保留已安装环境, 首次安装原子落位.
+- [x] iSH arm64 库构建及真实设备 destination 的签名 App 构建通过.
+- [x] iPhone X / iOS 16.7.15 完成两次覆盖安装, PTY/Python/Frida、26,294 个 ObjC 类名、256 KiB RPC、四项 syscall 及 rootfs 标记变化后的数据保留验收; 本地 70 项测试通过. 详见 [iSH 升级记录](../IOS-ISH-UPGRADE.md).
+
+其他候选方向保留待后续逐项评估: Termux 上游可用修复、Relay/会话稳定性、系统兼容性矩阵、构建自动化、iOS 并发检查与 iSH 汇编对齐警告. Android 版本号和 Frida 17 暂不推进; APK 虚拟环境 trace 探索暂缓.
+
+### 原有阶段目标
+
 本周目标不是演示完整企业链路, 而是把 Mira 作为 research prototype(研究原型)和 reference implementation(参考实现)讲清楚, 并完成最小证明。
 
 一周结束时应能表达清楚:

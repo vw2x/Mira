@@ -39,7 +39,7 @@ Environment variables:
   MIRA_IOS_AUTO_LAUNCH_DEVICE  1 to auto launch after physical-device install. Default 1
   MIRA_IOS_AUTO_OPEN_RELAY_CONSOLE  1 to open Relay console on computer. Default 1
   MIRA_IOS_AUTO_START_LOCAL_RELAY   1 to auto-start ./mira-local-web when localhost relay is missing. Default 1
-  MIRA_IOS_AUTO_BUILD_ISH_LIBS      1 to build missing iSH static libraries before Xcode build. Default 1
+  MIRA_IOS_AUTO_BUILD_ISH_LIBS      1 to rebuild missing or stale iSH static libraries before Xcode build. Default 1
   MIRA_IOS_RELAY_URL    Relay URL to inject at launch time for automated connect. Default http://<host-lan-ip>:8765 on physical devices, http://127.0.0.1:8765 on Simulator
   MIRA_IOS_HOST_RELAY_PORT Relay port for local relay and browser. Default 8765
   MIRA_IOS_RELAY_LOG_PATH Log file for auto-started local relay
@@ -86,12 +86,7 @@ fi
 ish_product_dir() {
   local sdk_name="$1"
   local build_dir="$2"
-  printf '%s/Debug-ApplePleaseFixFB19282108-%s/meson\n' "${build_dir}" "${sdk_name}"
-}
-
-ish_static_libraries_ready() {
-  local product_dir="$1"
-  [[ -f "${product_dir}/libish.a" && -f "${product_dir}/libish_emu.a" && -f "${product_dir}/libfakefs.a" ]]
+  printf '%s/%s-%s/meson\n' "${build_dir}" "${MIRA_ISH_CONFIGURATION:-Debug-ApplePleaseFixFB19282108}" "${sdk_name}"
 }
 
 ensure_ish_static_libraries() {
@@ -101,13 +96,16 @@ ensure_ish_static_libraries() {
   local product_dir
 
   product_dir="$(ish_product_dir "${sdk_name}" "${build_dir}")"
-  if ish_static_libraries_ready "${product_dir}"; then
+  if MIRA_ISH_SDK="${sdk_name}" \
+      MIRA_ISH_BUILD_DIR="${build_dir}" \
+      MIRA_ISH_ARCHS="${archs}" \
+      "${ROOT_DIR}/tools/ios/build-ish-libs.sh" --check; then
     return 0
   fi
 
   if [[ "${AUTO_BUILD_ISH_LIBS}" != "1" ]]; then
     cat >&2 <<MSG
-Missing iSH static libraries in:
+Missing or stale iSH static libraries in:
   ${product_dir}
 Run:
   MIRA_ISH_SDK=${sdk_name} MIRA_ISH_BUILD_DIR=${build_dir} MIRA_ISH_ARCHS=${archs} ./tools/ios/build-ish-libs.sh
@@ -116,7 +114,7 @@ MSG
     exit 1
   fi
 
-  echo "Missing iSH static libraries for ${sdk_name}. Building them first ..."
+  echo "Missing or stale iSH static libraries for ${sdk_name}. Building them first ..."
   MIRA_ISH_SDK="${sdk_name}" \
     MIRA_ISH_BUILD_DIR="${build_dir}" \
     MIRA_ISH_ARCHS="${archs}" \

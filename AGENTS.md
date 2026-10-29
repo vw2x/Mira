@@ -39,6 +39,9 @@ idb launch --udid <device-udid> com.vwww.mira.ios
 
 ## iOS MCP and Frida baseline
 
+- iSH 子模块固定上游 commit, Mira 补丁由 `tools/ios/prepare-ish-source.py` 幂等应用. 干净检出运行 iSH 行为测试前先执行该脚本; 直接 Xcode 或 `mira-build --target ios` 构建前先通过 `tools/ios/build-ish-libs.sh` 准备并校验静态库.
+- 已安装 iSH rootfs 的 `data` 和 `meta.db` 必须整体保留. stamp 变化不允许自动删除或覆盖用户环境; 运行时更新需要独立的显式迁移流程.
+
 1. iOS 的 MCP PTY 和 Frida 链路建立在 iSH 兼容层上, syscall 会经过翻译, 冷启动和脚本执行都比 Android 慢.
 2. iOS 分析默认策略不是频繁开关 PTY, 而是优先保持一个长生命周期 session, 在同一个 session 中连续执行 `status -> list -> run -> rpc`.
 3. 如果调用 Mira MCP 时没有显式传 `sessionId`, 应优先复用同一 `installId` 的活动 session, 不要每一步都 reopen.
