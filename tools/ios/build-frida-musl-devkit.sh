@@ -491,6 +491,10 @@ for arg in "$@"; do
   case "$arg" in
     -m32|-march=*)
       ;;
+    -c|-S)
+      # Meson's libffi map target adds -c to -E; Zig otherwise assembles the map.
+      if [[ $seen_E -eq 0 ]]; then args+=("$arg"); fi
+      ;;
     *)
       args+=("$arg")
       ;;
@@ -527,6 +531,10 @@ args=()
 for arg in "$@"; do
   case "$arg" in
     -m32|-march=*)
+      ;;
+    -c|-S)
+      # Meson's libffi map target adds -c to -E; Zig otherwise assembles the map.
+      if [[ $seen_E -eq 0 ]]; then args+=("$arg"); fi
       ;;
     *)
       args+=("$arg")

@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -70,6 +71,20 @@ class FridaMuslToolchainTest(unittest.TestCase):
         result = subprocess.run([str(path), *args], cwd=self.root, env=self.environment, capture_output=True, text=True, check=True)
         return json.loads(result.stdout)
 
+    def prepare_real_zig(self):
+        zig = shutil.which("zig")
+        if zig is None:
+            self.skipTest("Zig is required for the real compiler smoke test")
+        selected = self.prefixes["zig"] / "bin/zig"
+        selected.unlink()
+        selected.symlink_to(Path(zig).resolve())
+        self.environment["ZIG_GLOBAL_CACHE_DIR"] = str(self.root / "zig-cache")
+        self.prepare()
+
+    def run_real_compiler(self, compiler, *args):
+        result = subprocess.run([str(self.source / "build/musl-wrap" / compiler), *map(str, args)], cwd=self.root, env=self.environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_unversioned_homebrew_tools_and_wrapper_version_probes(self):
         self.prepare()
         for compiler, language in (("i686-linux-musl-gcc", "cc"), ("i686-linux-musl-g++", "c++")):
@@ -86,6 +101,47 @@ class FridaMuslToolchainTest(unittest.TestCase):
                 self.assertEqual(normal["args"], [language, "-target", "x86-linux-musl", "hello source.c", "-o", "output.o", "-Wno-error=incompatible-function-pointer-types", "-Wno-int-conversion"])
                 macros = self.wrapper(compiler, "-E", "-dM", "input.h")
                 self.assertEqual(macros["args"][:3], [language, "-target", "i386-linux-musl"])
+
+    def test_preprocessing_takes_precedence_over_compile_and_assembly_modes(self):
+        self.prepare()
+        for compiler in ("i686-linux-musl-gcc", "i686-linux-musl-g++"):
+            for modes in (("-E", "-c"), ("-c", "-E"), ("-E", "-S"), ("-S", "-E", "-c")):
+                with self.subTest(compiler=compiler, modes=modes):
+                    args = self.wrapper(compiler, *modes, "-P", "-x", "assembler-with-cpp", "libffi.map.in", "-o", "libffi.map")["args"]
+                    self.assertIn("-E", args)
+                    self.assertNotIn("-c", args)
+                    self.assertNotIn("-S", args)
+                    self.assertEqual(args[4:-2], ["-P", "-x", "assembler-with-cpp", "libffi.map.in", "-o", "libffi.map"])
+            for mode in ("-c", "-S"):
+                with self.subTest(compiler=compiler, mode=mode):
+                    args = self.wrapper(compiler, mode, "input.c", "-o", "output")["args"]
+                    self.assertEqual(args[3:-2], [mode, "input.c", "-o", "output"])
+
+    def test_real_zig_preprocesses_libffi_version_script(self):
+        self.prepare_real_zig()
+        source = self.root / "libffi.map.in"
+        source.write_text("#define ABI LIBFFI_BASE_8.0\nABI {\n  global:\n    ffi_call;\n  local:\n    *;\n};\n")
+        for compiler in ("i686-linux-musl-gcc", "i686-linux-musl-g++"):
+            for mode in ("-c", "-S"):
+                with self.subTest(compiler=compiler, mode=mode):
+                    output = self.root / (compiler + mode + ".map")
+                    dependencies = output.with_suffix(".d")
+                    self.run_real_compiler(compiler, "-m32", "-march=pentium4", "-E", "-P", "-x", "assembler-with-cpp", "-DGENERATE_LIBFFI_MAP", "-MD", "-MQ", output, "-MF", dependencies, "-o", output, mode, source)
+                    self.assertEqual(" ".join(output.read_text().split()), "LIBFFI_BASE_8.0 { global: ffi_call; local: *; };")
+                    self.assertIn(source.name, dependencies.read_text())
+
+    def test_real_zig_still_compiles_objects_and_emits_assembly(self):
+        self.prepare_real_zig()
+        for compiler, extension in (("i686-linux-musl-gcc", "c"), ("i686-linux-musl-g++", "cpp")):
+            source = self.root / ("answer." + extension)
+            source.write_text("int answer(void) { return 42; }\n")
+            with self.subTest(compiler=compiler):
+                obj = source.with_name(source.name + ".o")
+                self.run_real_compiler(compiler, "-c", source, "-o", obj)
+                self.assertEqual(obj.read_bytes()[:5], b"\x7fELF\x01")
+                assembly = source.with_name(source.name + ".s")
+                self.run_real_compiler(compiler, "-S", source, "-o", assembly)
+                self.assertIn("answer", assembly.read_text())
 
     def test_every_exported_llvm_tool_is_executable(self):
         result = self.prepare('for name in AR LD NM RANLIB STRIP READELF OBJCOPY OBJDUMP; do "${!name}" --version; done')
