@@ -8,7 +8,7 @@ as a private Unix-socket daemon.
 from __future__ import annotations
 
 import base64
-import hashlib
+import contextlib
 import json
 import math
 import os
@@ -265,10 +265,8 @@ def receive_request(connection: socket.socket) -> dict[str, Any]:
 
 
 def serve(socket_path: str) -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.unlink(socket_path)
-    except FileNotFoundError:
-        pass
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(socket_path)
     os.chmod(socket_path, 0o600)
@@ -324,15 +322,13 @@ def run_client(socket_path: str, encoded_request: str, timeout: float) -> None:
     try:
         response = exchange(socket_path, request_data, timeout)
     except AgentUnavailableBeforeSend:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(socket_path)
-        except FileNotFoundError:
-            pass
         log_path = socket_path + ".log"
-        log = open(log_path, "ab", buffering=0)
-        subprocess.Popen([sys.executable, os.path.abspath(__file__), "--daemon", socket_path],
-                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                         close_fds=True, start_new_session=True)
+        with open(log_path, "ab", buffering=0) as log:
+            subprocess.Popen([sys.executable, os.path.abspath(__file__), "--daemon", socket_path],
+                             stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                             close_fds=True, start_new_session=True)
         last_error = None
         for _ in range(50):
             try:

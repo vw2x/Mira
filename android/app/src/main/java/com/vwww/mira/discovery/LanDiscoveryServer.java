@@ -84,7 +84,7 @@ public final class LanDiscoveryServer implements Closeable {
             nextUdpSocket.bind(new InetSocketAddress(requestedDiscoveryPort));
             nextClientExecutor = Executors.newCachedThreadPool();
         } catch (IOException | RuntimeException exception) {
-            closeQuietly(nextUdpSocket);
+            closeDatagramSocketQuietly(nextUdpSocket);
             closeQuietly(nextWakeServer);
             releaseMulticastLock(nextMulticastLock);
             if (nextClientExecutor != null) nextClientExecutor.shutdownNow();
@@ -121,7 +121,7 @@ public final class LanDiscoveryServer implements Closeable {
         closed = true;
         running.set(false);
         lifecycleGeneration.incrementAndGet();
-        closeQuietly(udpSocket);
+        closeDatagramSocketQuietly(udpSocket);
         closeQuietly(wakeServer);
         closeClients();
         if (clientExecutor != null) clientExecutor.shutdownNow();
@@ -270,7 +270,7 @@ public final class LanDiscoveryServer implements Closeable {
         }
     }
 
-    private static void closeQuietly(DatagramSocket socket) {
+    private static void closeDatagramSocketQuietly(DatagramSocket socket) {
         if (socket == null) return;
         try {
             socket.close();

@@ -171,7 +171,7 @@ public final class MotionEventLogger {
         put(json, "toolMajor", () -> coords.toolMajor);
         put(json, "toolMinor", () -> coords.toolMinor);
         put(json, "orientation", () -> coords.orientation);
-        put(json, "axisValues", () -> axisValues(coords, event, pointerIndex));
+        put(json, "axisValues", () -> axisValues(coords, event));
         return json;
     }
 
@@ -191,7 +191,7 @@ public final class MotionEventLogger {
         return json;
     }
 
-    private static JSONObject axisValues(MotionEvent.PointerCoords coords, MotionEvent event, int pointerIndex) {
+    private static JSONObject axisValues(MotionEvent.PointerCoords coords, MotionEvent event) {
         JSONObject json = new JSONObject();
         for (int axis : axesFor(event)) {
             final int currentAxis = axis;

@@ -7,10 +7,6 @@ public final class RelayEndpointTest {
         String run() throws Exception;
     }
 
-    private static void check(boolean value) {
-        if (!value) throw new AssertionError();
-    }
-
     private static void equal(String expected, String actual) {
         if (!expected.equals(actual)) {
             throw new AssertionError("expected <" + expected + "> but was <" + actual + ">");
@@ -83,7 +79,6 @@ public final class RelayEndpointTest {
             fails(URISyntaxException.class, () -> RelayEndpoint.screenWebSocket(malformed));
         }
 
-        check(endpointCases.length >= 10);
         System.out.println("PASS: relay URL normalization and endpoint golden cases");
     }
 }

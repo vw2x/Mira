@@ -1,3 +1,4 @@
+import contextlib
 import http.server
 import itertools
 import json
@@ -109,14 +110,13 @@ class HealthTests(unittest.TestCase):
                     deadline = time.monotonic() + 25
                     while time.monotonic() < deadline:
                         self.assertIsNone(child.poll(), (Path(directory) / 'launcher.log').read_text())
-                        try:
+                        with contextlib.suppress(Exception):
                             state = managed.probe(local)
                             if public_file.exists() and state['instanceId'] != previous:
                                 return state['instanceId']
-                        except Exception:
-                            pass
                         time.sleep(0.2)
-                    self.fail('Relay recovery deadline exceeded: ' + (Path(directory) / 'launcher.log').read_text())
+                    return self.fail('Relay recovery deadline exceeded: ' +
+                                     (Path(directory) / 'launcher.log').read_text())
                 first = wait_ready()
                 self.assertEqual(public_file.read_text().strip(), local)
                 entries = subprocess.check_output(['ps', '-eo', 'pid,ppid,args'], text=True).splitlines()[1:]
@@ -127,12 +127,12 @@ class HealthTests(unittest.TestCase):
                 self.assertNotEqual(first, wait_ready(first))
                 self.assertEqual(public_file.read_text().strip(), local)
             finally:
-                try: os.killpg(child.pid, signal.SIGTERM)
-                except ProcessLookupError: pass
-                try: child.wait(timeout=5)
-                except subprocess.TimeoutExpired: pass
-                try: os.killpg(child.pid, signal.SIGKILL)
-                except ProcessLookupError: pass
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(child.pid, signal.SIGTERM)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    child.wait(timeout=5)
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(child.pid, signal.SIGKILL)
                 child.wait()
 
     def test_recovery_reuses_console_after_retry_budget_reset(self):

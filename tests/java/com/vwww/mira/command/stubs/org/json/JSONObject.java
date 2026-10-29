@@ -114,7 +114,12 @@ public class JSONObject {
             int start = index;
             while (index < text.length() && "0123456789-".indexOf(text.charAt(index)) >= 0) index++;
             if (start == index) throw new JSONException("unsupported JSON value");
-            return Integer.parseInt(text.substring(start, index));
+            String number = text.substring(start, index);
+            try {
+                return Integer.parseInt(number);
+            } catch (NumberFormatException error) {
+                throw new JSONException("invalid JSON number " + number + ": " + error.getMessage());
+            }
         }
 
         private String readString() {
