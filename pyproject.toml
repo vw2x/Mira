@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mira"
-version = "1.2.0"
+version = "1.2.1"
 description = "Mira desktop control, relay, and packaging toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
