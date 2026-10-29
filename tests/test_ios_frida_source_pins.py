@@ -41,7 +41,7 @@ class FridaSourcePinsTest(unittest.TestCase):
 
         self.source = self.root / "frida source"
         self.init(self.source)
-        self.commit_file(self.source, "Makefile.sdk.mk", "deps/.zlib-stamp deps/.libffi-stamp deps/.glib-stamp:\n\t@touch $@\n")
+        self.commit_file(self.source, "Makefile.sdk.mk", "deps/.zlib-stamp deps/.libffi-stamp deps/.glib-stamp:\n\t@touch $@\nifeq ($(FRIDA_HOST),linux-x86)\ndeps/.libunwind-stamp:\n\t@touch $@\nendif\n")
         self.git(self.source, "tag", "16.0.7")
         (self.source / "deps").mkdir()
         self.glib = self.source / "deps/glib"

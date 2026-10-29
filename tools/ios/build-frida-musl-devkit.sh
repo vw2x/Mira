@@ -23,7 +23,31 @@ require_tool() {
   fi
 }
 
+patch_libunwind_x86_sigreturn() {
+  MIRA_FRIDA_SOURCE_DIR="$SOURCE_DIR" python3 - <<'PY'
+from pathlib import Path
+import os
+
+path = Path(os.environ["MIRA_FRIDA_SOURCE_DIR"]) / "deps/libunwind/src/x86/Gos-linux.c"
+text = path.read_text()
+before = "      x86_sigreturn (sc);\n"
+after = "      x86_sigreturn (cursor);\n"
+caller = "x86_local_resume (unw_addr_space_t as, unw_cursor_t *cursor, void *arg)\n"
+callee = """x86_sigreturn (unw_cursor_t *cursor)
+{
+  struct cursor *c = (struct cursor *) cursor;
+  struct sigcontext *sc = (struct sigcontext *) c->sigcontext_addr;
+"""
+if text.count(caller) != 1 or text.count(callee) != 1 or text.count(before) + text.count(after) != 1:
+    raise SystemExit(f"unexpected libunwind x86 sigreturn source: {path}")
+# The callee reads both c->uc and c->sigcontext_addr from the complete cursor.
+if before in text:
+    path.write_text(text.replace(before, after, 1))
+PY
+}
+
 apply_source_patches() {
+  patch_libunwind_x86_sigreturn
   MIRA_FRIDA_SOURCE_DIR="$SOURCE_DIR" python3 - <<'PY'
 from pathlib import Path
 import os
@@ -320,7 +344,7 @@ prepare_source_tree() {
 
   (
     cd "$SOURCE_DIR"
-    make -f Makefile.sdk.mk deps/.zlib-stamp deps/.libffi-stamp deps/.glib-stamp
+    FRIDA_HOST=linux-x86 make -f Makefile.sdk.mk deps/.zlib-stamp deps/.libffi-stamp deps/.glib-stamp deps/.libunwind-stamp
   )
 
   sync_glib_gvdb_revision
