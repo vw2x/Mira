@@ -221,8 +221,10 @@ class IshTtyTest(unittest.TestCase):
                 [str(self.executable), scenario],
                 capture_output=True, text=True, timeout=5,
             )
-        except subprocess.TimeoutExpired:
-            return self.fail(f"{scenario}: TTY input/read did not complete within 5 seconds")
+        except subprocess.TimeoutExpired as error:
+            raise AssertionError(
+                f"{scenario}: TTY input/read did not complete within 5 seconds"
+            ) from error
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"PASS: {scenario}", result.stdout)
 
