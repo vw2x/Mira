@@ -13,6 +13,7 @@ import tempfile
 import textwrap
 import zipfile
 from dataclasses import dataclass
+from email.parser import Parser
 from pathlib import Path
 from typing import Iterable
 
@@ -376,27 +377,59 @@ def site_packages_dir(prefix_root: Path, python_version: str) -> Path:
     return prefix_root / "lib" / f"python{python_version}" / "site-packages"
 
 
+def validate_pure_python_wheel(path: Path) -> None:
+    with zipfile.ZipFile(path) as archive:
+        names = archive.namelist()
+        for name in names:
+            if any(part == ".env" or (part.startswith(".env.") and part != ".env.example")
+                   for part in Path(name.replace("\\", "/")).parts):
+                raise ValueError(f"wheel 含禁止读取的环境配置条目: {path.name}")
+        metadata_paths = [name for name in names if name.endswith(".dist-info/WHEEL")]
+        if len(metadata_paths) != 1:
+            raise ValueError(f"wheel 缺少唯一 WHEEL 元数据: {path.name}")
+        metadata = Parser().parsestr(archive.read(metadata_paths[0]).decode("utf-8"))
+    tags = metadata.get_all("Tag", [])
+    if (not path.name.endswith("-none-any.whl")
+            or metadata.get("Root-Is-Purelib", "").lower() != "true"
+            or not tags
+            or any(len(tag.split("-")) != 3 or tag.split("-")[1:] != ["none", "any"] for tag in tags)):
+        raise ValueError(f"Android runtime 只接受纯 Python wheel: {path.name}")
+
+
 def download_wheels(destination: Path) -> list[Path]:
     destination.mkdir(parents=True, exist_ok=True)
-    before = {path.resolve() for path in destination.glob("*.whl")}
-    run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "download",
-            "--disable-pip-version-check",
-            "--only-binary=:all:",
-            "--no-deps",
-            "--dest",
-            str(destination),
-            *PURE_PYTHON_SPECS,
-        ]
-    )
-    after = sorted({path.resolve() for path in destination.glob("*.whl")} - before)
-    if not after:
-        after = sorted(path.resolve() for path in destination.glob("*.whl"))
-    return list(after)
+    # An empty destination describes this resolution, regardless of old cache hits.
+    with tempfile.TemporaryDirectory(prefix=".resolve-", dir=destination) as temporary:
+        staging = Path(temporary)
+        run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "download",
+                "--disable-pip-version-check",
+                "--only-binary=:all:",
+                "--no-deps",
+                "--platform", "any",
+                "--abi", "none",
+                "--dest",
+                str(staging),
+                *PURE_PYTHON_SPECS,
+            ]
+        )
+        wheels = sorted(staging.glob("*.whl"))
+        expected = {re.split(r"[<>=!~]", spec, maxsplit=1)[0].replace("_", "-") for spec in PURE_PYTHON_SPECS}
+        selected = [path.name.split("-", 1)[0].replace("_", "-") for path in wheels]
+        if len(selected) != len(expected) or set(selected) != expected:
+            raise RuntimeError(f"下载的 Python wheel 集合不完整: expected={sorted(expected)}, actual={selected}")
+        for path in wheels:
+            validate_pure_python_wheel(path)
+        result = []
+        for path in wheels:
+            cached = destination / path.name
+            path.replace(cached)
+            result.append(cached.resolve())
+        return result
 
 
 def download_source_distribution(destination: Path, package_spec: str) -> Path:
@@ -483,6 +516,7 @@ def extract_tarball(archive_path: Path, destination: Path) -> Path:
 
 
 def install_wheel(wheel_path: Path, site_packages: Path) -> None:
+    validate_pure_python_wheel(wheel_path)
     with zipfile.ZipFile(wheel_path) as archive:
         for entry in archive.infolist():
             name = entry.filename
@@ -615,6 +649,14 @@ def install_frida_python_binding(prefix_root: Path, python_version: str, site_pa
         # Frida >= 16.5 imports the extension relatively from the package.
         extension_path = site_packages / "frida" / "_frida.abi3.so"
     build_frida_extension(prefix_root, python_version, source_root, extension_path)
+    if not legacy_stubs.is_dir():
+        (site_packages / "_frida.py").write_text(
+            '"""Compatibility import for the bundled frida-tools CLI."""\n'
+            "import sys\n"
+            "from frida import _frida\n"
+            "sys.modules[__name__] = _frida\n",
+            encoding="utf-8",
+        )
     return sdist_path.name
 
 
@@ -673,7 +715,7 @@ def ensure_frida_entrypoint(prefix_root: Path) -> None:
         #!/system/bin/sh
         SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
         PYTHON_BIN="$SELF_DIR/python3"
-        exec "$PYTHON_BIN" -m frida_tools.repl "$@"
+        exec "$PYTHON_BIN" -c 'import frida, runpy, sys; sys.modules["_frida"] = frida._frida; runpy.run_module("frida_tools.repl", run_name="__main__", alter_sys=True)' "$@"
         """
     )
     write_text_executable(bin_dir / "frida-official", frida_wrapper)
@@ -721,13 +763,24 @@ def validate_layout(prefix_root: Path, python_version: str) -> None:
     extension_candidates = (site_packages / "_frida.abi3.so", site_packages / "frida" / "_frida.abi3.so")
     if not any(path.is_file() and path.stat().st_size > 0 for path in extension_candidates):
         raise FileNotFoundError(f"构建结果缺少非空 Frida 扩展: {extension_candidates}")
+    if (site_packages / "frida" / "_frida.abi3.so").is_file():
+        alias = site_packages / "_frida.py"
+        if not alias.is_file() or alias.stat().st_size == 0:
+            raise FileNotFoundError(f"构建结果缺少 Frida CLI 兼容模块: {alias}")
 
-    import_program = (
-        "import sys; "
-        f"sys.path.insert(0, {site_packages.as_posix()!r}); "
-        "import " + ", ".join(EXPECTED_IMPORTS)
-    )
-    run([sys.executable, "-c", import_program])
+    import_program = textwrap.dedent(f"""\
+        import importlib
+        from pathlib import Path
+        import sys
+        target = Path({str(site_packages.resolve())!r})
+        sys.path.insert(0, str(target))
+        for name in {EXPECTED_IMPORTS!r}:
+            module = importlib.import_module(name)
+            origin = getattr(module, "__file__", None)
+            if origin is None or target not in Path(origin).resolve().parents:
+                raise ImportError(f"{{name}} resolved outside packaged runtime: {{origin}}")
+        """)
+    run([sys.executable, "-I", "-S", "-B", "-c", import_program])
 
 
 def relocate_text_prefixes(prefix_root: Path) -> int:

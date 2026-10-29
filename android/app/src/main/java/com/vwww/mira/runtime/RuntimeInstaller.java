@@ -151,6 +151,16 @@ public final class RuntimeInstaller {
     }
 
     private boolean hasCompletePythonRuntime() {
+        String[] requiredFiles = {
+            "site-packages/frida/__init__.py",
+            "site-packages/frida_tools/application.py",
+            "site-packages/pip/__init__.py",
+            "site-packages/colorama/__init__.py",
+            "site-packages/prompt_toolkit/__init__.py",
+            "site-packages/pygments/__init__.py",
+            "site-packages/wcwidth/__init__.py",
+            "zipfile/_path/__init__.py"
+        };
         File libDir = new File(prefixDir, "lib");
         File[] candidates = libDir.listFiles(file -> file.isDirectory()
             && file.getName().matches("python\\d+\\.\\d+"));
@@ -159,10 +169,20 @@ public final class RuntimeInstaller {
             File sitePackages = new File(pythonDir, "site-packages");
             boolean hasExtension = new File(sitePackages, "_frida.abi3.so").isFile()
                 || new File(sitePackages, "frida/_frida.abi3.so").isFile();
-            if (hasExtension
-                && new File(sitePackages, "frida/__init__.py").isFile()
-                && new File(sitePackages, "pip/__init__.py").isFile()
-                && new File(pythonDir, "zipfile/_path/__init__.py").isFile()) return true;
+            if (!hasExtension) continue;
+            if (new File(sitePackages, "frida/_frida.abi3.so").isFile()) {
+                File alias = new File(sitePackages, "_frida.py");
+                if (!alias.isFile() || alias.length() == 0) continue;
+            }
+            boolean complete = true;
+            for (String relative : requiredFiles) {
+                File file = new File(pythonDir, relative);
+                if (!file.isFile() || file.length() == 0) {
+                    complete = false;
+                    break;
+                }
+            }
+            if (complete) return true;
         }
         return false;
     }
