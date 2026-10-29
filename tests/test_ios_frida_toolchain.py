@@ -52,7 +52,7 @@ class FridaMuslToolchainTest(unittest.TestCase):
         self.fake_tool(self.prefixes["zig"] / "bin/zig")
         self.executable(self.bin / "brew", "import sys\nprefixes = " + repr({key: str(value) for key, value in self.prefixes.items()}) + "\nif len(sys.argv) != 3 or sys.argv[1] != '--prefix' or sys.argv[2] not in prefixes:\n    raise SystemExit(1)\nprint(prefixes[sys.argv[2]])\n")
         self.environment = dict(os.environ)
-        for name in (*TOOL_VARIABLES, "BASH_ENV", "ENV"):
+        for name in (*TOOL_VARIABLES, "ZIG", "BASH_ENV", "ENV"):
             self.environment.pop(name, None)
         self.environment.update(PATH=str(self.bin) + os.pathsep + os.defpath, MIRA_IOS_FRIDA_SOURCE_DIR=str(self.source), FRIDA_VERSION="16.0.7")
 
@@ -158,6 +158,27 @@ class FridaMuslToolchainTest(unittest.TestCase):
         result = self.prepare(check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Configured tool for ld.lld is not executable", result.stderr)
+
+    def test_explicit_zig_override_wins_and_preserves_literal_path(self):
+        zig = self.root / "pinned zig $(touch ZIG_OVERRIDE_EXECUTION)"
+        self.fake_tool(zig)
+        self.environment["ZIG"] = str(zig)
+        self.prepare()
+        for compiler, language in (("i686-linux-musl-gcc", "cc"), ("i686-linux-musl-g++", "c++")):
+            with self.subTest(compiler=compiler):
+                version = self.wrapper(compiler, "--version")
+                self.assertEqual(version, {"tool": zig.name, "args": [language, "-target", "x86-linux-musl", "--version"]})
+                compilation = self.wrapper(compiler, "-c", "input.c", "-o", "output.o")
+                self.assertEqual(compilation["tool"], zig.name)
+                self.assertEqual(compilation["args"][3:7], ["-c", "input.c", "-o", "output.o"])
+        self.assertFalse((self.root / "ZIG_OVERRIDE_EXECUTION").exists())
+
+    def test_invalid_zig_override_fails_before_generating_wrappers(self):
+        self.environment["ZIG"] = str(self.root / "missing zig")
+        result = self.prepare(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Configured tool for zig is not executable", result.stderr)
+        self.assertFalse((self.source / "build/musl-wrap").exists())
 
     def test_upstream_cross_environment_consumes_selected_tools_without_evaluation(self):
         linker = self.prefix / "explicit linker $(touch OVERRIDE_EXECUTION)"

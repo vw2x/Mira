@@ -4,6 +4,8 @@ The `release-tag-build` workflow creates a draft GitHub Release. It publishes th
 
 Before creating a tag, run a preflight build with `workflow_dispatch`: set `release_tag` to the intended version, `source_ref` to its full commit SHA, and `publish_release` to `false`. A nonempty `source_ref` always suppresses release publication. Once that commit passes, tag the same commit; the tag build creates the draft. Keep failed tags unchanged.
 
+The iOS workflow uses the official Zig 0.16.0 archive with a fixed SHA-256 digest for Frida 16.0.7's musl build. It validates archive entries before extracting into `RUNNER_TEMP` and passes the absolute executable path through `ZIG`. For a matching local build, set `ZIG=/absolute/path/to/zig`; when omitted, the build script keeps its Homebrew/PATH discovery. This keeps the older Vala-generated C sources on the compatible Clang 21 toolchain family.
+
 Build the public Android APK with the maintainer's existing local debug key:
 
 ```bash

@@ -122,8 +122,51 @@ jobs:
 
       - name: Install iOS build prerequisites
         run: |
-          brew install llvm lld ninja pkg-config libarchive zig
+          brew install llvm lld ninja pkg-config libarchive
           python -m pip install --upgrade pip meson
+
+      - name: Set up verified Zig 0.16.0 for the Frida musl build
+        run: |
+          case "$(uname -m)" in
+            arm64|aarch64)
+              zig_arch=aarch64
+              zig_sha256=b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489
+              ;;
+            x86_64)
+              zig_arch=x86_64
+              zig_sha256=0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7
+              ;;
+            *) echo "Unsupported Zig host architecture" >&2; exit 1 ;;
+          esac
+          zig_directory="zig-$zig_arch-macos-0.16.0"
+          zig_archive="$RUNNER_TEMP/$zig_directory.tar.xz"
+          curl --fail --location --retry 3 \
+            "https://ziglang.org/download/0.16.0/$zig_directory.tar.xz" -o "$zig_archive"
+          printf '%s  %s\n' "$zig_sha256" "$zig_archive" | shasum -a 256 -c -
+          python - "$zig_archive" "$RUNNER_TEMP" "$zig_directory" <<'PY'
+          from pathlib import Path, PurePosixPath
+          import sys
+          import tarfile
+
+          archive, destination, expected_root = sys.argv[1:]
+          target = Path(destination) / expected_root
+          if target.exists() or target.is_symlink():
+              raise SystemExit("Zig extraction destination already exists")
+          with tarfile.open(archive) as bundle:
+              members = bundle.getmembers()
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  protected = any(part == ".env" or (part.startswith(".env.") and part != ".env.example") for part in path.parts)
+                  if (path.is_absolute() or ".." in path.parts or not path.parts
+                          or path.parts[0] != expected_root or protected
+                          or not (member.isfile() or member.isdir())):
+                      raise SystemExit("Unsafe entry in Zig archive")
+              bundle.extractall(Path(destination), members=members)
+          PY
+          zig_path="$(cd "$RUNNER_TEMP/$zig_directory" && pwd)/zig"
+          test "$("$zig_path" version)" = 0.16.0
+          printf 'ZIG=%s\n' "$zig_path" >> "$GITHUB_ENV"
+          "$zig_path" cc --version
 
       - name: Validate release version
         run: |

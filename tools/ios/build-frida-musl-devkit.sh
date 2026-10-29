@@ -490,7 +490,7 @@ prepare_macos_musl_wrapper() {
   require_tool python3
 
   local zig_bin lld_bin wrapdir name wrapper_name
-  zig_bin="$(resolve_macos_tool zig zig)"
+  zig_bin="$(resolve_macos_tool zig zig "${ZIG:-}")"
   lld_bin="$(resolve_macos_tool ld.lld lld "${LD:-}")"
   AR="$(resolve_macos_tool llvm-ar llvm "${AR:-}")"
   NM="$(resolve_macos_tool llvm-nm llvm "${NM:-}")"
