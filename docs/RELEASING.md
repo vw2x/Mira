@@ -6,6 +6,8 @@ Before creating a tag, run a preflight build with `workflow_dispatch`: set `rele
 
 The iOS workflow uses the official Zig 0.16.0 archive with a fixed SHA-256 digest for Frida 16.0.7's musl build. It validates archive entries before extracting into `RUNNER_TEMP` and passes the absolute executable path through `ZIG`. For a matching local build, set `ZIG=/absolute/path/to/zig`; when omitted, the build script keeps its Homebrew/PATH discovery. This keeps the older Vala-generated C sources on the compatible Clang 21 toolchain family.
 
+Before creating `Mira.app.zip` and `Mira-unsigned.ipa`, `mira-build` copies the Xcode product to a temporary staging directory, excludes sensitive `.env` variants other than `.env.example`, removes embedded signatures from every Mach-O file, and deletes `_CodeSignature` directories and embedded provisioning profiles. The Xcode product itself is not modified. Packaging fails if signature inspection is inconclusive or a detected signature remains after removal, so both public iOS archives are genuinely unsigned and ready for downstream signing.
+
 Build the public Android APK with the maintainer's existing local debug key:
 
 ```bash

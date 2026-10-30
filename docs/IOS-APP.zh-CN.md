@@ -180,7 +180,7 @@ build/ios-mira-device-native-relay-derived/Build/Products/Debug-iphoneos/Mira.ap
 1. 直接把 `Mira.app` 打成 `dist/ios/Mira.app.zip`
 2. 按 iOS 标准分发目录组装 `Payload/Mira.app`, 再压成 `dist/ios/Mira-unsigned.ipa`
 
-这里的 unsigned IPA 指不额外走导出签名和发布签名流程, 只对已构建出的 device `.app` 做容器归档.
+这里的 unsigned IPA 不只是省略导出签名和发布签名流程. `mira-build` 会先把已构建出的 device `.app` 复制到临时 staging 目录, 排除 `.env.example` 以外的敏感 `.env` 变体, 移除其中所有 Mach-O 文件的嵌入签名, 删除 `_CodeSignature` 和嵌入式 provisioning profile, 再从同一份已清理副本生成 `.app.zip` 与 `.ipa`. 原始 Xcode 构建产物保持不变; 签名状态不明确、签名移除失败或归档校验失败时, 不会用未完成的归档覆盖现有产物.
 
 如果是 CI 或没有连接真机的环境, 可以改用:
 
