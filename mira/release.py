@@ -50,6 +50,10 @@ class BuildResult:
 class VersionInfo:
     pyproject: str
     package: str
+    android_version: str
+    android_build: int
+    ios_version: str
+    ios_build: int
     expected: str | None
 
 
@@ -89,6 +93,35 @@ def read_package_version() -> str:
     return match.group(1)
 
 
+def read_android_version() -> tuple[str, int]:
+    source = read_text(ROOT_DIR / "android/app/build.gradle")
+    version_match = re.search(r'(?m)^\s*versionName\s+"([^"]+)"\s*$', source)
+    build_match = re.search(r"(?m)^\s*versionCode\s+(\d+)\s*$", source)
+    if not version_match or not build_match:
+        raise ReleaseError("未在 android/app/build.gradle 中找到 versionName/versionCode")
+    return version_match.group(1), int(build_match.group(1))
+
+
+def read_ios_version() -> tuple[str, int]:
+    source = read_text(ROOT_DIR / "ios/Mira/Mira.xcodeproj/project.pbxproj")
+    versions = set(re.findall(r"(?m)^\s*MARKETING_VERSION\s*=\s*([^;]+);\s*$", source))
+    builds = set(re.findall(r"(?m)^\s*CURRENT_PROJECT_VERSION\s*=\s*(\d+);\s*$", source))
+    if len(versions) != 1 or len(builds) != 1:
+        raise ReleaseError(
+            "iOS Debug/Release 版本源不一致或缺失: "
+            f"MARKETING_VERSION={sorted(versions)}, "
+            f"CURRENT_PROJECT_VERSION={sorted(builds)}"
+        )
+    return versions.pop().strip(), int(builds.pop())
+
+
+def release_build_number(version: str) -> int | None:
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
+    if not match:
+        return None
+    return int("".join(match.groups()))
+
+
 def normalize_release_version(value: str | None) -> str | None:
     if value is None:
         return None
@@ -115,27 +148,52 @@ def resolve_expected_release_version(args: argparse.Namespace) -> str | None:
 
 
 def collect_version_info(expected_version: str | None = None) -> VersionInfo:
+    android_version, android_build = read_android_version()
+    ios_version, ios_build = read_ios_version()
     return VersionInfo(
         pyproject=read_pyproject_version(),
         package=read_package_version(),
+        android_version=android_version,
+        android_build=android_build,
+        ios_version=ios_version,
+        ios_build=ios_build,
         expected=expected_version,
     )
 
 
 def validate_release_versions(expected_version: str | None = None) -> VersionInfo:
     info = collect_version_info(expected_version)
-    if info.pyproject != info.package:
+    versions = {
+        "pyproject.toml": info.pyproject,
+        "mira/__init__.py": info.package,
+        "android/app/build.gradle": info.android_version,
+        "ios/Mira/Mira.xcodeproj/project.pbxproj": info.ios_version,
+    }
+    if len(set(versions.values())) != 1:
         raise ReleaseError(
-            "版本源不一致: "
-            f"pyproject.toml={info.pyproject}, "
-            f"mira/__init__.py={info.package}"
+            "版本源不一致: " + ", ".join(f"{path}={version}" for path, version in versions.items())
+        )
+    if info.android_build != info.ios_build:
+        raise ReleaseError(
+            "移动端构建号不一致: "
+            f"Android versionCode={info.android_build}, "
+            f"iOS CURRENT_PROJECT_VERSION={info.ios_build}"
+        )
+    expected_build = release_build_number(info.pyproject)
+    if expected_build is not None and info.android_build != expected_build:
+        raise ReleaseError(
+            "移动端构建号与发布版本不匹配: "
+            f"version={info.pyproject}, expectedBuild={expected_build}, "
+            f"actualBuild={info.android_build}"
         )
     if info.expected and info.pyproject != info.expected:
         raise ReleaseError(
             "发布版本不匹配: "
             f"tag={info.expected}, "
             f"pyproject.toml={info.pyproject}, "
-            f"mira/__init__.py={info.package}"
+            f"mira/__init__.py={info.package}, "
+            f"Android={info.android_version}, "
+            f"iOS={info.ios_version}"
         )
     return info
 
@@ -502,6 +560,8 @@ def main(argv: list[str] | None = None) -> int:
             "[mira-build] 版本校验通过: "
             f"pyproject.toml={info.pyproject}, "
             f"mira/__init__.py={info.package}, "
+            f"Android={info.android_version} ({info.android_build}), "
+            f"iOS={info.ios_version} ({info.ios_build}), "
             f"releaseTag={info.expected or '<none>'}"
         )
         return 0

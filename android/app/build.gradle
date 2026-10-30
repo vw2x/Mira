@@ -7,7 +7,7 @@ def bootstrapPython = System.getenv("MIRA_PYTHON3") ?: "python3"
 def fridaVersion = System.getenv("MIRA_FRIDA_VERSION") ?: "16.0.7"
 // Opt in to three standalone APKs without changing mira-android's default APK path.
 def buildAbiSplits = providers.gradleProperty("miraAbiSplits").map { it.toBoolean() }.getOrElse(false)
-def bootstrapStateVersion = providers.gradleProperty("miraBootstrapStateVersion").map { it.toInteger() }.getOrElse(9)
+def bootstrapStateVersion = providers.gradleProperty("miraBootstrapStateVersion").map { it.toInteger() }.getOrElse(10)
 def unsignedDebug = providers.gradleProperty("miraUnsignedDebug").map { it.toBoolean() }.getOrElse(false)
 
 android {
@@ -32,8 +32,8 @@ android {
         applicationId "com.vwww.mira"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 122
-        versionName "1.2.2"
+        versionCode 123
+        versionName "1.2.3"
         buildConfigField "int", "MIRA_BOOTSTRAP_STATE_VERSION", bootstrapStateVersion.toString()
 
         ndk {
