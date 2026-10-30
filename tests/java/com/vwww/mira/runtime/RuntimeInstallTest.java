@@ -1,5 +1,6 @@
 package com.vwww.mira.runtime;
 
+import com.vwww.mira.BuildConfig;
 import android.content.Context;
 import android.content.res.AssetManager;
 import java.io.*;
@@ -65,7 +66,8 @@ public final class RuntimeInstallTest {
         File customShell = new File(files, "usr/bin/sh"); customShell.getParentFile().mkdirs();
         Files.write(customShell.toPath(), "#!/system/bin/sh\necho user shell\n".getBytes());
         File state = new File(files, ".mira-bootstrap-state");
-        Files.write(state.toPath(), "# Managed by MiraBootstrap\nversion=8\n".getBytes());
+        Files.write(state.toPath(), ("# Managed by MiraBootstrap\nversion="
+            + (BuildConfig.MIRA_BOOTSTRAP_STATE_VERSION - 1) + "\n").getBytes());
         Context context = new Context() {
             @Override
             public Context getApplicationContext() { return this; }

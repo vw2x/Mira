@@ -93,7 +93,7 @@ jobs:
           Verification: CI package checks only; see the compatibility notes for device coverage
           Frida version: 16.7.19
           Python version: ${PYTHON_VERSION}
-          Bootstrap state: 18
+          Bootstrap state: 19
           Signing: ephemeral GitHub Actions debug key; it may not update an APK signed elsewhere
           Commit: ${GITHUB_SHA}
           EOF

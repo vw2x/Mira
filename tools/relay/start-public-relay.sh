@@ -654,10 +654,7 @@ ensure_port_available
 if [[ "${MIRA_SKIP_CONSOLE_BUILD:-0}" != "1" && -f "${CONSOLE_DIR}/package.json" ]]; then
   if command -v npm >/dev/null 2>&1; then
     echo "Building Mira console ..."
-    if [[ ! -d "${CONSOLE_DIR}/node_modules" ]]; then
-      npm --prefix "${CONSOLE_DIR}" ci
-    fi
-    npm --prefix "${CONSOLE_DIR}" run build
+    bash "${ROOT_DIR}/tools/relay/build-console.sh"
   elif [[ ! -f "${CONSOLE_DIR}/out/index.html" ]]; then
     echo "npm not found and apps/console/out is missing. Build the console first." >&2
     exit 1
