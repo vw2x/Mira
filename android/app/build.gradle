@@ -32,8 +32,8 @@ android {
         applicationId "com.vwww.mira"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 123
-        versionName "1.2.3"
+        versionCode 124
+        versionName "1.2.4"
         buildConfigField "int", "MIRA_BOOTSTRAP_STATE_VERSION", bootstrapStateVersion.toString()
 
         ndk {
