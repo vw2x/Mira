@@ -25,6 +25,19 @@ DEFAULT_IOS_PROJECT = ROOT_DIR / "ios/Mira/Mira.xcodeproj"
 DEFAULT_IOS_SCHEME = "Mira"
 DEFAULT_IOS_DERIVED_DATA = ROOT_DIR / "build/ios-mira-device-native-relay-derived"
 DEFAULT_IOS_APP = DEFAULT_IOS_DERIVED_DATA / "Build/Products/Debug-iphoneos/Mira.app"
+CODE_SIGN_PATH = Path("/usr/bin/codesign")
+MACH_O_MAGICS = frozenset(
+    {
+        b"\xfe\xed\xfa\xce",
+        b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf",
+        b"\xcf\xfa\xed\xfe",
+        b"\xca\xfe\xba\xbe",
+        b"\xbe\xba\xfe\xca",
+        b"\xca\xfe\xba\xbf",
+        b"\xbf\xba\xfe\xca",
+    }
+)
 
 
 class ReleaseError(Exception):
@@ -384,20 +397,85 @@ def validate_archive_root(archive_path: Path, expected_root: str) -> None:
         raise ReleaseError(f"归档根目录无效: {archive_path}, 预期 {prefix}")
 
 
-def package_ios_outputs(app_path: Path) -> list[ArtifactRecord]:
-    ensure_directory(IOS_DIST_DIR)
-    app_zip = IOS_DIST_DIR / f"{app_path.name}.zip"
-    make_zip_from_directory(app_path, app_zip, app_path.name)
-    validate_archive_root(app_zip, app_path.name)
+def is_sensitive_environment_path(path: Path) -> bool:
+    return path.name == ".env" or (path.name.startswith(".env.") and path.name != ".env.example")
 
-    ipa_path = IOS_DIST_DIR / "Mira-unsigned.ipa"
-    payload_dir = Path(tempfile.mkdtemp(prefix="mira-payload-"))
-    try:
-        payload_root = payload_dir / "Payload"
-        payload_root.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(app_path, payload_root / app_path.name)
-        if ipa_path.exists():
-            ipa_path.unlink()
+
+def sensitive_environment_entries_to_ignore(_directory: str, entries: list[str]) -> list[str]:
+    return [entry for entry in entries if is_sensitive_environment_path(Path(entry))]
+
+
+def is_mach_o_file(path: Path) -> bool:
+    if path.is_symlink() or not path.is_file() or is_sensitive_environment_path(path):
+        return False
+    with path.open("rb") as source:
+        return source.read(4) in MACH_O_MAGICS
+
+
+def has_code_signature(path: Path) -> bool:
+    completed = subprocess.run(
+        [str(CODE_SIGN_PATH), "--display", "--verbose=0", str(path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode == 0:
+        return True
+    if b"code object is not signed at all" in (completed.stderr or b""):
+        return False
+    raise ReleaseError(f"无法判断 iOS 代码签名状态: {path}, codesign 退出码 {completed.returncode}")
+
+
+def remove_code_signature(path: Path) -> None:
+    subprocess.run(
+        [str(CODE_SIGN_PATH), "--remove-signature", str(path)],
+        check=True,
+    )
+
+
+def remove_signing_metadata(app_path: Path) -> None:
+    signing_paths = [
+        *app_path.rglob("_CodeSignature"),
+        *app_path.rglob("embedded.mobileprovision"),
+    ]
+    for signing_path in sorted(signing_paths, key=lambda path: len(path.parts), reverse=True):
+        if signing_path.is_symlink() or signing_path.is_file():
+            signing_path.unlink()
+        elif signing_path.is_dir():
+            shutil.rmtree(signing_path)
+
+
+def strip_ios_code_signatures(app_path: Path) -> list[Path]:
+    removed: list[Path] = []
+    for code_path in sorted(path for path in app_path.rglob("*") if is_mach_o_file(path)):
+        if not has_code_signature(code_path):
+            continue
+        remove_code_signature(code_path)
+        if has_code_signature(code_path):
+            raise ReleaseError(f"iOS 代码签名移除失败: {code_path}")
+        removed.append(code_path)
+    remove_signing_metadata(app_path)
+    return removed
+
+
+def prepare_unsigned_ios_app(source_app: Path, destination_app: Path) -> list[Path]:
+    if destination_app.exists() or destination_app.is_symlink():
+        raise ReleaseError(f"iOS 未签名 staging 目录已存在: {destination_app}")
+    shutil.copytree(
+        source_app,
+        destination_app,
+        ignore=sensitive_environment_entries_to_ignore,
+    )
+    return strip_ios_code_signatures(destination_app)
+
+
+def make_ipa_from_app(source_app: Path, output_path: Path) -> None:
+    if output_path.exists():
+        output_path.unlink()
+    with tempfile.TemporaryDirectory(prefix="mira-payload-") as temp_dir:
+        payload_root = Path(temp_dir) / "Payload"
+        payload_root.mkdir()
+        shutil.copytree(source_app, payload_root / source_app.name)
         subprocess.run(
             [
                 "/usr/bin/ditto",
@@ -406,14 +484,31 @@ def package_ios_outputs(app_path: Path) -> list[ArtifactRecord]:
                 "--sequesterRsrc",
                 "--keepParent",
                 str(payload_root),
-                str(ipa_path),
+                str(output_path),
             ],
             check=True,
-            cwd=payload_dir,
+            cwd=temp_dir,
         )
-    finally:
-        shutil.rmtree(payload_dir, ignore_errors=True)
-    validate_archive_root(ipa_path, "Payload")
+
+
+def package_ios_outputs(app_path: Path) -> list[ArtifactRecord]:
+    ensure_directory(IOS_DIST_DIR)
+    app_zip = IOS_DIST_DIR / f"{app_path.name}.zip"
+    ipa_path = IOS_DIST_DIR / "Mira-unsigned.ipa"
+    with tempfile.TemporaryDirectory(prefix=".mira-ios-package-", dir=IOS_DIST_DIR) as temp_dir:
+        staging_dir = Path(temp_dir)
+        unsigned_app = staging_dir / app_path.name
+        staged_app_zip = staging_dir / app_zip.name
+        staged_ipa = staging_dir / ipa_path.name
+        removed_signatures = prepare_unsigned_ios_app(app_path, unsigned_app)
+        print(f"[mira-build] 已移除 iOS 代码签名: {len(removed_signatures)}")
+        make_zip_from_directory(unsigned_app, staged_app_zip, unsigned_app.name)
+        make_ipa_from_app(unsigned_app, staged_ipa)
+
+        validate_archive_root(staged_app_zip, app_path.name)
+        validate_archive_root(staged_ipa, "Payload")
+        staged_app_zip.replace(app_zip)
+        staged_ipa.replace(ipa_path)
 
     return [
         ArtifactRecord(target="ios", path=str(app_zip), kind="app-zip"),
